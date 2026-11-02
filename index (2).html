@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Planeación agregada multietapa · multifuente · con escasez</title>
+<style>
+:root{--bg:#eef1f4;--ink:#17202e;--mut:#5b6675;--ln:#cfd6de;--ac:#1d4ed8;--ye:#f6e05e;--rd:#c0392b;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:18px 24px 0}
+h1{margin:0;font-size:21px;letter-spacing:-.2px}
+header p{margin:4px 0 0;color:var(--mut);max-width:80ch}
+nav{display:flex;gap:4px;padding:14px 24px 0;border-bottom:1px solid var(--ln)}
+nav button{border:0;background:none;padding:9px 16px;font:inherit;cursor:pointer;color:var(--mut);border-bottom:3px solid transparent}
+nav button.on{color:var(--ink);font-weight:600;border-color:var(--ac)}
+main{padding:20px 24px 60px}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:6px;padding:14px 16px;margin-bottom:16px}
+h3{margin:0 0 10px;font-size:16px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+.row label{display:flex;flex-direction:column;font-size:13px;color:var(--mut);gap:3px}
+input{font:inherit;padding:5px 7px;border:1px solid var(--ln);border-radius:4px;width:96px;background:#fff;color:var(--ink)}
+input[type=text]{width:150px}
+input:focus,button:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+button{font:inherit;padding:7px 13px;border:1px solid var(--ln);background:#fff;border-radius:4px;cursor:pointer}
+button.pri{background:var(--ac);color:#fff;border-color:var(--ac);font-weight:600}
+button:disabled{opacity:.6;cursor:wait}
+.sc{overflow-x:auto;margin-bottom:6px}
+table{border-collapse:collapse;font-size:13.5px}
+th,td{border:1px solid var(--ln);padding:4px 8px;text-align:right;white-space:nowrap}
+th{background:#f5f7f9;font-weight:600}
+td:first-child,th:first-child{text-align:left}
+td small{color:var(--mut);margin-left:6px}
+.kpi{display:flex;flex-wrap:wrap;gap:22px;margin:4px 0 12px}
+.kpi div{font-size:12.5px;color:var(--mut)}.kpi b{display:block;font-size:19px;color:var(--ink)}
+.kpi .tot b{background:var(--ye);padding:0 6px;border-radius:3px}
+.msg{padding:10px 14px;border-radius:5px;background:#fdecea;color:#7a1d12;margin-bottom:14px}
+.note{color:var(--mut);font-size:13px}
+.svgw{overflow:auto;border:1px solid var(--ln);background:#fff;border-radius:4px}
+@media print{nav,header p,.row button{display:none}}
+</style>
+</head>
+<body>
+<header>
+<h1>Planeación agregada multietapa y multifuente con escasez</h1>
+<p>Modelo MILP del paper: etapas en serie, varias fuentes (máquinas) por etapa, costos de producción, preparación, mantener inventario y escasez. Esta versión admite varios productos que comparten las horas de cada fuente.</p>
+</header>
+<nav>
+<button data-t="dat" class="on">1. Datos</button>
+<button data-t="dg">2. Diagrama de parámetros</button>
+<button data-t="res">3. Resultados</button>
+</nav>
+<main>
+<section id="dat" class="on">
+<div class="row">
+<button id="bEj">Cargar ejemplo del paper</button>
+<button id="bEx">Exportar datos (.json)</button>
+<button id="bIm">Importar datos</button>
+<input type="file" id="fIm" accept=".json" hidden>
+<button id="bSol" class="pri">Resolver</button>
+<span id="st" class="note"></span>
+</div>
+<div id="cfg"></div>
+</section>
+<section id="dg"><div id="dgc"></div></section>
+<section id="res"><div id="rc"><p class="note">Aún no hay resultados. Completa los datos y pulsa Resolver.</p></div></section>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const E=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,v]of Object.entries(a))x.startsWith('on')?e[x]=v:e.setAttribute(x,v);k.flat().forEach(c=>e.append(c));return e};
+const fmt=v=>Math.round(v).toLocaleString('es-CO');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const arr=(x,n,f)=>{x.length=n;for(let i=0;i<n;i++)if(x[i]==null)x[i]=f(i);return x};
+
+/* ---------- datos ---------- */
+const mk=n=>({n,N:1,B:0,NT:1,HT:8,r:[],a:[],c:[]});
+const src=(n,N,B,r,a,c)=>({n,N,B,NT:1,HT:8,r:[r],a:[a],c:[c]});
+const EJ=()=>({T:4,M:4,P:1,meses:3,Fp:.8,dias:[67,68,76,67],prods:['Producto'],
+ d:[[50500,65500,82000,92000]],K1:[1000],K2:[1000],psi:[4],
+ stages:[
+ {n:'Corte',h:[2],src:[src('Tipo 1',5,12.2,20,25000,[25,28,30,28]),src('Tipo 2',5,10.3,25,24000,[28,30,30,32]),src('Tipo 3',10,11.2,28,20000,[30,32,34,32])]},
+ {n:'Armado',h:[3],src:[src('Tipo 1',12,14.2,35,24000,[45,46,44,48]),src('Tipo 2',11,16.1,40,22000,[48,50,49,50])]},
+ {n:'Acabado',h:[4],src:[src('Tipo 1',4,12.2,25,12000,[12,15,18,19]),src('Tipo 2',5,12.5,28,10000,[14,16,18,20]),src('Tipo 3',11,13.5,30,12000,[13,16,20,22])]},
+ {n:'Empaque',h:[5],src:[src('Tipo 1',3,12.5,24,23000,[24,29,24,28]),src('Tipo 2',4,11.2,25,25000,[24,29,24,27]),src('Tipo 3',5,10.3,28,23000,[26,30,27,25]),src('Tipo 4',6,11.4,30,22000,[28,33,27,25])]}]});
+let S=EJ();
+function fit(){
+ arr(S.dias,S.T,()=>20);arr(S.prods,S.P,i=>'Producto '+(i+1));
+ arr(S.d,S.P,()=>[]).forEach(r=>arr(r,S.T,()=>0));
+ arr(S.K1,S.P,()=>0);arr(S.K2,S.P,()=>0);arr(S.psi,S.P,()=>1);
+ arr(S.stages,S.M,i=>({n:'Etapa '+(i+1),h:[],src:[mk('Fuente 1')]}));
+ S.stages.forEach(st=>{arr(st.h,S.P,()=>1);st.src.forEach(s=>{arr(s.r,S.P,()=>10);arr(s.a,S.P,()=>0);arr(s.c,S.P,()=>[]).forEach(r=>arr(r,S.T,()=>1))})});
+}
+const Hh=(i,j,t)=>{const s=S.stages[i].src[j];return Math.max(0,(S.dias[t]*s.NT*s.HT*s.N-s.B*s.N*S.meses)*S.Fp)};
+const Cd=(p,i,j,t)=>Hh(i,j,t)*Math.max(0,S.stages[i].src[j].r[p]);
+
+/* ---------- formulario ---------- */
+let dirty=true;
+const redraw=()=>{dirty=true};
+const num=(o,k,cb)=>{const e=E('input',{type:'number',step:'any',value:o[k]});e.oninput=()=>{o[k]=parseFloat(e.value)||0;(cb||redraw)()};return e};
+const txt=(o,k)=>{const e=E('input',{type:'text',value:o[k]});e.oninput=()=>{o[k]=e.value;redraw()};return e};
+const Fl=(l,i)=>E('label',{},l,i);
+function TB(head,rows){
+ return E('div',{class:'sc'},E('table',{},E('thead',{},E('tr',{},head.map(h=>E('th',{},h)))),
+  E('tbody',{},rows.map(r=>E('tr',{},r.map(x=>{const td=E('td');
+   if(x&&x.h!=null){td.innerHTML=x.h;td.dataset.v=x.v}else if(typeof x==='string')td.innerHTML=x;else td.append(x);return td}))))));
+}
+const Ts=()=>[...Array(S.T)].map((_,t)=>'T'+(t+1));
+function sz(k){const e=num(S,k,()=>{S[k]=Math.max(1,Math.round(S[k]));fit();renderCfg();redraw()});e.min=1;return e}
+function renderCfg(){
+ const c=$('#cfg');c.replaceChildren();
+ c.append(E('div',{class:'card'},E('h3',{},'General'),
+  E('div',{class:'row'},Fl('Períodos',sz('T')),Fl('Etapas',sz('M')),Fl('Productos',sz('P')),
+   Fl('Meses por período',num(S,'meses')),Fl('Factor de eficiencia Fp',num(S,'Fp'))),
+  E('p',{class:'note'},'Capacidad en horas = (días hábiles × turnos × horas/turno × máquinas − pérdida de mantenimiento × máquinas × meses) × Fp. En unidades = horas × tasa de producción.'),
+  TB(['']. concat(Ts()),[['Días hábiles',...S.dias.map((_,t)=>num(S.dias,t))]])));
+ const hd=['Producto','Costo escasez ψ','Inv. inicial K1','Inv. final K2',...Ts().map(t=>'Demanda '+t),...S.stages.map((s,i)=>'Mantener '+(i==S.M-1?'final (+)':'etapa '+(i+1)))];
+ c.append(E('div',{class:'card'},E('h3',{},'Productos, demanda y costos de inventario'),
+  TB(hd,S.prods.map((_,p)=>[txt(S.prods,p),num(S.psi,p),num(S.K1,p),num(S.K2,p),...S.d[p].map((_,t)=>num(S.d[p],t)),...S.stages.map(s=>num(s.h,p))]))));
+ S.stages.forEach((st,i)=>{
+  const rows=[];
+  st.src.forEach((s,j)=>S.prods.forEach((pn,p)=>rows.push([esc(s.n)+' · '+esc(pn),num(s.r,p),num(s.a,p),...s.c[p].map((_,t)=>num(s.c[p],t))])));
+  c.append(E('div',{class:'card'},
+   E('div',{class:'row'},E('h3',{style:'margin:0'},'Etapa '+(i+1)),txt(st,'n'),
+    E('button',{onclick:()=>{st.src.push(mk('Fuente '+(st.src.length+1)));fit();renderCfg();redraw()}},'+ fuente'),
+    E('button',{onclick:()=>{if(st.src.length>1){st.src.pop();renderCfg();redraw()}}},'− fuente')),
+   TB(['Fuente','Máquinas','Pérdida mant. (h/mes/máq)','Turnos','Horas/turno'],st.src.map(s=>[txt(s,'n'),num(s,'N'),num(s,'B'),num(s,'NT'),num(s,'HT')])),
+   TB(['Fuente · producto','Tasa (u/h)','Costo preparación',...Ts().map(t=>'Costo unit. '+t)],rows)));
+ });
+}
+
+/* ---------- diagrama ---------- */
+function net(p,R,z){
+ const {T,M}=S,cw=330,rh=180,x0=230,y0=130,W=x0+T*cw-60,H=y0+(M-1)*rh+170;
+ const px=t=>x0+t*cw,py=i=>y0+i*rh,on=v=>Math.abs(v)>.5,id=R?'s':'p';
+ const mk_=k=>`url(#${k}${id}${p})`;
+ let o=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui,sans-serif" font-size="13"><defs>${[['a','#17202e'],['g','#b4bcc8'],['r','#c0392b']].map(([k,c])=>`<marker id="${k}${id}${p}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="${c}"/></marker>`).join('')}</defs><rect width="${W}" height="${H}" fill="#fff"/>`;
+ const lab=(x,y,s,c='#17202e')=>`<text x="${x}" y="${y}" text-anchor="middle" fill="${c}" font-weight="600" stroke="#fff" stroke-width="4" paint-order="stroke">${s}</text>`;
+ const arc=(d,a,k)=>`<path d="${d}" fill="none" stroke="${k=='r'?'#c0392b':a?'#17202e':'#b4bcc8'}" stroke-width="${a?1.8:1}" ${k=='r'?'stroke-dasharray="6 4"':''} marker-end="${mk_(k=='r'?'r':a?'a':'g')}"/>`;
+ const yel=(x,y,s)=>`<rect x="${x-40}" y="${y-14}" width="80" height="22" rx="3" fill="#f6e05e"/><text x="${x}" y="${y+2}" text-anchor="middle" font-weight="700">${s}</text>`;
+ const fi=M-1;
+ S.stages.forEach((st,i)=>{
+  const J=st.src.length,y1=i?py(i-1)+22:py(0)-98,y2=py(i)-22;
+  o+=`<text x="16" y="${py(i)-4}" font-weight="700">Etapa ${i+1}: ${esc(st.n)}</text><text x="16" y="${py(i)+14}" fill="#5b6675">j = 1…${J} fuentes</text>`;
+  for(let t=0;t<T;t++){
+   if(!i)o+=`<rect x="${px(t)-30}" y="${y1-24}" width="60" height="24" rx="4" fill="#eef1f4" stroke="#17202e"/><text x="${px(t)}" y="${y1-8}" text-anchor="middle">Entrada</text>`;
+   st.src.forEach((s,k)=>{
+    const off=(k-(J-1)/2)*50,ym=(y1+y2)/2,x=px(t)+off;
+    const v=R?R.x(p,i,k,t):1,a=!R||on(v);
+    if(R&&!a&&!z){return}
+    o+=arc(`M${px(t)} ${y1}Q${px(t)+2*off} ${ym} ${px(t)} ${y2}`,a,'a');
+    if(!R){o+=lab(x,ym-4+(k%2?12:0),`j${k+1} Cd ${fmt(Cd(p,i,k,t))}`)+lab(x,ym+11+(k%2?12:0),`c ${s.c[p][t]}`,'#5b6675')}
+    else if(a||z)o+=lab(x,ym+(k%2?12:0),`${k+1}: ${fmt(v)}`);
+   });
+   o+=`<circle cx="${px(t)}" cy="${py(i)}" r="22" fill="#fff" stroke="#17202e" stroke-width="1.6"/><text x="${px(t)}" y="${py(i)+5}" text-anchor="middle" font-weight="700">T${t+1}</text>`;
+   if(t<T-1){
+    const xa=px(t)+22,xb=px(t+1)-22,xm=(px(t)+px(t+1))/2;
+    if(i<fi){const v=R?R.v(p,i,t):0;
+     if(!R||on(v)||z){o+=arc(`M${xa} ${py(i)-6}Q${xm} ${py(i)-58} ${xb} ${py(i)-6}`,!R||on(v),'a')+lab(xm,py(i)-34,R?'I '+fmt(v):'h '+st.h[p])}}
+    else{const v=R?R.q(p,t):0,w=R?R.m(p,t):0;
+     if(!R||on(v)||z)o+=arc(`M${xa} ${py(i)-6}Q${xm} ${py(i)-58} ${xb} ${py(i)-6}`,!R||on(v),'a')+lab(xm,py(i)-34,R?'I+ '+fmt(v):'h '+st.h[p]);
+     if(!R||on(w)||z)o+=arc(`M${xa-4} ${py(i)+16}Q${xm} ${py(i)+68} ${xb+4} ${py(i)+16}`,true,'r')+lab(xm,py(i)+52,R?'I− '+fmt(w):'ψ '+S.psi[p],'#c0392b');
+    }}
+  }
+ });
+ for(let t=0;t<T;t++){const y=py(fi);
+  o+=`<line x1="${px(t)}" y1="${y+22}" x2="${px(t)}" y2="${y+84}" stroke="#17202e" stroke-width="1.8" marker-end="${mk_('a')}"/>`+yel(px(t),y+110,'d '+fmt(S.d[p][t]));}
+ o+=`<line x1="${px(0)-110}" y1="${py(fi)}" x2="${px(0)-24}" y2="${py(fi)}" stroke="#17202e" stroke-width="1.8" marker-end="${mk_('a')}"/>`+yel(px(0)-70,py(fi)-24,'K1 '+fmt(S.K1[p]));
+ o+=`<line x1="${px(T-1)+24}" y1="${py(fi)}" x2="${px(T-1)+110}" y2="${py(fi)}" stroke="#17202e" stroke-width="1.8" marker-end="${mk_('a')}"/>`+yel(px(T-1)+70,py(fi)-24,'K2 '+fmt(R?R.q(p,T-1):S.K2[p]));
+ return o+'</svg>';
+}
+function capTable(p){
+ const rows=[];S.stages.forEach((st,i)=>st.src.forEach((s,j)=>rows.push([esc(st.n)+' · '+esc(s.n),...S.dias.map((_,t)=>({h:fmt(Cd(p,i,j,t)),v:Cd(p,i,j,t)}))])));
+ return TB(['Etapa · fuente',...Ts()],rows);
+}
+function renderDg(){
+ const c=$('#dgc');c.replaceChildren();
+ S.prods.forEach((pn,p)=>{
+  const w=E('div',{class:'svgw'});w.innerHTML=net(p,null);
+  c.append(E('div',{class:'card'},E('h3',{},'Parámetros · '+pn),
+   E('p',{class:'note'},'Cada arco paralelo es una fuente j. Cd = capacidad en unidades, c = costo unitario, h = costo de mantener, ψ = costo de escasez, d = demanda, K1 y K2 = inventario inicial y final.'),w,
+   E('h3',{style:'margin-top:14px'},'Capacidades calculadas (unidades)'),capTable(p)));
+ });
+ dirty=false;
+}
+
+/* ---------- modelo ---------- */
+const nX=(p,i,j,t)=>`X_${p}_${i}_${j}_${t}`,nY=(p,i,j,t)=>`Y_${p}_${i}_${j}_${t}`,nV=(p,i,t)=>`V_${p}_${i}_${t}`,nQ=(p,t)=>`Q_${p}_${t}`,nM=(p,t)=>`W_${p}_${t}`;
+function buildLP(){
+ const {T,M,P}=S,obj=[],cons=[],gen=[],bin=[];let n=0;
+ const row=(terms,op,rhs)=>{const l=terms.filter(a=>a[0]!==0).map(([c,v])=>`${c<0?'-':'+'} ${Math.abs(c)} ${v}`);if(!l.length)return;
+  cons.push(` r${n++}: `+l.map((x,k)=>x+(k%6==5?'\n   ':' ')).join('')+`${op} ${rhs}`)};
+ for(let p=0;p<P;p++){
+  S.stages.forEach((st,i)=>{
+   st.src.forEach((s,j)=>{for(let t=0;t<T;t++){
+    gen.push(nX(p,i,j,t));bin.push(nY(p,i,j,t));
+    obj.push([s.c[p][t],nX(p,i,j,t)],[s.a[p],nY(p,i,j,t)]);
+    row([[1,nX(p,i,j,t)],[-Cd(p,i,j,t),nY(p,i,j,t)]],'<=',0);}});
+   for(let t=0;t<T;t++){
+    if(i<M-1){gen.push(nV(p,i,t));obj.push([st.h[p],nV(p,i,t)]);
+     const tm=[];st.src.forEach((s,j)=>tm.push([1,nX(p,i,j,t)]));
+     S.stages[i+1].src.forEach((s,j)=>tm.push([-1,nX(p,i+1,j,t)]));
+     if(t>0)tm.push([1,nV(p,i,t-1)]);tm.push([-1,nV(p,i,t)]);row(tm,'=',0);}
+    else{gen.push(nQ(p,t),nM(p,t));obj.push([st.h[p],nQ(p,t)],[S.psi[p],nM(p,t)]);
+     const tm=[];st.src.forEach((s,j)=>tm.push([1,nX(p,i,j,t)]));
+     if(t>0)tm.push([1,nQ(p,t-1)],[-1,nM(p,t-1)]);tm.push([-1,nQ(p,t)],[1,nM(p,t)]);
+     row(tm,'=',S.d[p][t]-(t==0?S.K1[p]:0));}
+   }
+   if(i<M-1)row([[1,nV(p,i,T-1)]],'=',0);
+  });
+  row([[1,nQ(p,T-1)]],'=',S.K2[p]);row([[1,nM(p,T-1)]],'=',0);
+ }
+ if(P>1)S.stages.forEach((st,i)=>st.src.forEach((s,j)=>{for(let t=0;t<T;t++)
+  row(S.prods.map((_,p)=>[s.r[p]>0?1/s.r[p]:0,nX(p,i,j,t)]),'<=',Hh(i,j,t));}));
+ const ch=a=>a.map((x,k)=>x+(k%10==9?'\n ':' ')).join('');
+ const os=obj.filter(a=>a[0]!==0).map(([c,v])=>`${c<0?'-':'+'} ${Math.abs(c)} ${v}`);
+ return `Minimize\n obj: ${os.length?os.map((x,k)=>x+(k%6==5?'\n   ':' ')).join(''):'0 '+gen[0]}\nSubject To\n${cons.join('\n')}\nGeneral\n ${ch(gen)}\nBinary\n ${ch(bin)}\nEnd\n`;
+}
+let HI;
+async function loadHi(){
+ if(HI)return HI;
+ for(const b of['https://cdn.jsdelivr.net/npm/highs@1.8.0/build/','https://lovasoft.github.io/highs-js/']){
+  try{await new Promise((ok,ko)=>{const s=document.createElement('script');s.src=b+'highs.js';s.onload=ok;s.onerror=ko;document.head.append(s)});
+   const f=window.Module||window.highs;HI=await f({locateFile:x=>b+x});return HI}catch(e){console.warn(e)}}
+ throw new Error('No se pudo cargar el solver HiGHS. Revisa la conexión a internet.');
+}
+async function solve(){
+ const b=$('#bSol'),st=$('#st');b.disabled=true;st.textContent='Cargando solver…';
+ try{
+  const hi=await loadHi();st.textContent='Resolviendo…';await new Promise(r=>setTimeout(r,30));
+  const r=hi.solve(buildLP());
+  if(r.Status!=='Optimal'){showRes(null,r.Status);return}
+  const g=n=>Math.round((r.Columns[n]?.Primal||0)*1e6)/1e6;
+  showRes({obj:r.ObjectiveValue,x:(p,i,j,t)=>g(nX(p,i,j,t)),y:(p,i,j,t)=>g(nY(p,i,j,t)),v:(p,i,t)=>g(nV(p,i,t)),q:(p,t)=>g(nQ(p,t)),m:(p,t)=>g(nM(p,t))});
+ }catch(e){showRes(null,String(e.message||e))}
+ finally{b.disabled=false;st.textContent=''}
+}
+
+/* ---------- resultados ---------- */
+let LAST;
+function showRes(R,err){
+ LAST=R;const c=$('#rc');c.replaceChildren();tab('res');
+ if(!R){c.append(E('div',{class:'msg'},err==='Infeasible'?'El problema no tiene solución factible: la capacidad no alcanza para la demanda (o el inventario final). Revisa capacidades, demanda y K2.':'No se obtuvo solución óptima: '+err));return}
+ const {T,M}=S;
+ c.append(E('div',{class:'row'},E('button',{onclick:csv},'Descargar tablas (.csv)'),E('button',{onclick:()=>window.print()},'Imprimir / PDF')));
+ S.prods.forEach((pn,p)=>{
+  let cp=0,cs=0,ch=0,ce=0;
+  S.stages.forEach((st,i)=>{st.src.forEach((s,j)=>{for(let t=0;t<T;t++){cp+=s.c[p][t]*R.x(p,i,j,t);cs+=s.a[p]*R.y(p,i,j,t)}});
+   for(let t=0;t<T;t++)ch+=st.h[p]*(i<M-1?R.v(p,i,t):R.q(p,t))});
+  for(let t=0;t<T;t++)ce+=S.psi[p]*R.m(p,t);
+  const kp=(l,v,k)=>E('div',{class:k},l,E('b',{},'$ '+fmt(v)));
+  const pr=[];S.stages.forEach((st,i)=>st.src.forEach((s,j)=>{
+   let tot=0;const cells=S.dias.map((_,t)=>{const x=R.x(p,i,j,t);tot+=x;
+    let h=0;S.prods.forEach((_,q)=>{if(s.r[q]>0)h+=R.x(q,i,j,t)/s.r[q]});const H=Hh(i,j,t),u=H>0?h/H*100:0;
+    return {h:fmt(x)+(R.y(p,i,j,t)>.5?' ●':'')+`<small>${u.toFixed(0)}%</small>`,v:x}});
+   pr.push([esc(st.n)+' · '+esc(s.n),...cells,{h:fmt(tot),v:tot}])}));
+  const inv=[];
+  S.stages.slice(0,M-1).forEach((st,i)=>inv.push(['Inventario '+esc(st.n),...S.dias.map((_,t)=>({h:fmt(R.v(p,i,t)),v:R.v(p,i,t)}))]));
+  inv.push(['Inventario final (+)',...S.dias.map((_,t)=>({h:fmt(R.q(p,t)),v:R.q(p,t)}))]);
+  inv.push(['Escasez / pendiente (−)',...S.dias.map((_,t)=>({h:fmt(R.m(p,t)),v:R.m(p,t)}))]);
+  inv.push(['Demanda',...S.d[p].map(d=>({h:fmt(d),v:d}))]);
+  const w=E('div',{class:'svgw'});w.innerHTML=net(p,R,false);
+  c.append(E('div',{class:'card'},E('h3',{},'Resultados · '+pn),
+   E('div',{class:'kpi'},kp('Producción',cp),kp('Preparación',cs),kp('Mantener inventario',ch),kp('Escasez',ce),
+    p==0?E('div',{class:'tot'},'Función objetivo (todos los productos)',E('b',{},'$ '+fmt(R.obj))):''),
+   E('h3',{},'Producción por fuente (unidades · % de horas usadas · ● fuente activada)'),
+   TB(['Etapa · fuente',...Ts(),'Total'],pr),
+   E('h3',{},'Inventarios, escasez y demanda'),TB(['Concepto',...Ts()],inv),
+   E('div',{class:'row'},E('h3',{style:'margin:0'},'Diagrama de la solución'),
+    E('button',{onclick:()=>dl('solucion_'+pn+'.svg',net(p,R,false),'image/svg+xml')},'Descargar SVG'),
+    E('button',{onclick:()=>{w.innerHTML=net(p,R,true)}},'Mostrar arcos en cero')),w));
+ });
+}
+function dl(n,t,m){const a=E('a',{href:URL.createObjectURL(new Blob([t],{type:m})),download:n});document.body.append(a);a.click();a.remove()}
+function csv(){
+ let o='';document.querySelectorAll('#rc .card').forEach(cd=>{
+  o+=cd.querySelector('h3').textContent+'\n';
+  cd.querySelectorAll('table').forEach(tb=>{
+   const h=tb.closest('.sc').previousElementSibling;if(h&&h.tagName=='H3')o+=h.textContent+'\n';
+   tb.querySelectorAll('tr').forEach(r=>{o+=[...r.children].map(x=>'"'+(x.dataset.v??x.textContent.trim()).toString().replace(/"/g,'""')+'"').join(';')+'\n'});o+='\n'});});
+ dl('resultados.csv','\ufeff'+o,'text/csv');
+}
+
+/* ---------- pestañas y botones ---------- */
+function tab(t){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t==t));
+ document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==t));
+ if(t=='dg'&&dirty)renderDg()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>tab(b.dataset.t));
+$('#bSol').onclick=solve;
+$('#bEj').onclick=()=>{S=EJ();fit();renderCfg();redraw()};
+$('#bEx').onclick=()=>dl('datos.json',JSON.stringify(S,null,1),'application/json');
+$('#bIm').onclick=()=>$('#fIm').click();
+$('#fIm').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{try{S=JSON.parse(t);fit();renderCfg();redraw()}catch(x){alert('Archivo no válido')}})};
+fit();renderCfg();
+</script>
+</body>
+</html>
